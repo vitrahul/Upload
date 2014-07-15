@@ -1,0 +1,258 @@
+% program for sigma point generation
+%Created by PMS and Santosh
+%This programs generates sigma points and pass those through the ordinary
+%differential equations.
+%This program also calculates the upadated mean and covariance from the
+%initial mean  and covariace.
+
+function [xmeannew,xwmeannew,xcovnew,xwcovnew] = ukfsigma1(xmeanprev,xwmeanprev,xcovprev,xwcovprev,ymeasured);
+global f R kp0 kd0 kt0 kf0 kfs0 Ep Ed Et Ef Efs deltaHr UA rhoCp rhoCpc Qi Qs Qm Qc V Vc Cif Cmf Tf Tcf Cpdot Csf dinit sampletime
+
+ tinit = 0;
+ sampletime = 300;
+ 
+
+Q =diag([0.0000162 0.0001 .0001 9.564e-10 0.000009784 0.00001170]);
+R = diag([ 0.0000162 0.0001 .0001 9.564e-10 0.00009784 0.00001170]);
+pa=blkdiag(xcovprev,xwcovprev, Q, R); % this is the augmented matrix of the error covariance, process noise covariance and measurement noise covariance.
+r =[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0  1/sqrt(2)]';
+
+Pa=cholupdate(pa,r,'+');
+
+
+wnoisem = [0 0 0 0 0 0]';
+vnoisem = [0 0 0 0 0 0]';
+
+%=================================================
+% create an augmented matrix 
+%=================================================
+Xaug = [ xmeanprev ;xwmeanprev; wnoisem ; vnoisem];
+    
+
+
+m = length(Xaug);     % define the length of the dimensions of the states
+k = 0;               % k is the tuning parameter
+alpha = 0.01;
+beta = 0  ;
+gamma = alpha^2 *(m+k) - m;
+rho = sqrt(m+gamma);          
+%================================================
+% Create sigma points with the augmented matrix
+%================================================
+Xaugsigma = zeros(m,2*m+1);
+
+    Xaugsigma(:,1) = Xaug
+
+for j = 1:m,
+    Xaugsigma(:,j+1) = Xaug + rho*(Pa(:,j));
+end
+for j = 1:m,
+    Xaugsigma(:,j+m+1) = Xaug - rho*(Pa(:,j));
+end 
+for j=1:2*m+1;
+    i=1:8;
+    if Xaugsigma(i,j)<=0
+        pause
+    else
+    end 
+end
+for i=1:53;
+if Xaugsigma(1,i)<=0,
+    Xaugsigma(1,i)==0,
+else
+end
+end
+%===============================================
+%Xpredict = xres*weights``
+%===============================================
+ Xsigma = Xaugsigma(1:8,:)
+ Xwnoisesigma = Xaugsigma(9:14,:);
+ Wnoisesigma = Xaugsigma(15:20,:);
+ Vnoisesigma =Xaugsigma(21:26,:);
+ 
+ 
+%==============================================
+% measurement transforming matrix H :
+%============================================== 
+ H=[0 0 1 0 0 0 0 0 0 0 0 0 0 0 ;
+    0 0 0 1 0 0 0 0 0 0 0 0 0 0 ;
+    0 0 0 0 1 0 0 0 0 0 0 0 0 0 ;
+    0 0 0 0 0 1 0 0 0 0 0 0 0 0 ;
+    0 0 0 0 0 0 1 0 0 0 0 0 0 0 ;
+    0 0 0 0 0 0 0 1 0 0 0 0 0 0 ];
+
+ 
+%=============================================
+% Weights
+%=============================================
+  Wm = zeros(2*m+1,1);
+for i=1,
+    Wm(i) = gamma/(m+gamma);
+end
+for i = 1:m,
+    Wm(i+1)= 1/(2*(m+gamma));
+end
+for i = 1:m,     
+      Wm(i+m+1) = 1/(2*(m+gamma));
+end
+  
+
+
+ Wc = zeros(2*m+1,1);
+for i=1,
+    Wc(i) = gamma/(m+gamma) + (1-alpha^2 + beta);
+end
+for i = 1:m,
+    Wc(i+1)= 1/(2*(m+gamma));
+end
+for i = 1:m,     
+      Wc(i+m+1) = 1/(2*(m+gamma));
+end
+  
+  
+%======================================================================
+%stochastic differnece equation to express the unmeasured disturbance
+%signal d:
+%=====================================================================
+   Aw = [1 0 0 0 0 0;
+        0 1 0 0 0 0;
+        0 0 1 0 0 0;
+        0 0 0 1 0 0;
+        0 0 0 0 1 0;
+        0 0 0 0 0 1];
+    
+   
+   Bw = [1 0 0 0 0 0;
+        0 1 0 0 0 0;
+        0 0 1 0 0 0;
+        0 0 0 1 0 0;
+        0 0 0 0 1 0;
+        0 0 0 0 0 1];
+    
+   Cw =  [1 0 0 0 0 0;
+        0 1 0 0 0 0;
+        0 0 1 0 0 0;
+        0 0 0 1 0 0;
+        0 0 0 0 1 0;
+        0 0 0 0 0 1];
+    
+    
+        
+   xw = Aw * Xwnoisesigma + Bw * Wnoisesigma;
+  
+ 
+  
+      
+   Xw = xw * Wm;
+   dinitfull = Cw * xw;
+   %dinit = dinit';
+%========================================================
+%transformed sigma points
+%========================================================
+for j= 1:2*m+1,
+         Xvec = Xsigma(:,j);
+         dinit = dinitfull(:,j)
+         %dvec = dinit(:,j);
+         xres = psukfstep(Xvec,tinit,sampletime);
+         [row,col] = size(xres);
+         xresvec = xres(row,:)';
+  
+  
+  if j==1,
+         xresmat = xresvec,
+  else   xresmat = [xresmat xresvec],
+  end
+  %Xres = xres(row,:)';
+end
+
+
+
+%========================================================
+% a priori approximation 
+%========================================================
+  
+  Xpredict = xresmat*Wm;  % predicted values of the state.
+  Xaugres = [xresmat;xw];    % augmented matrix with transformed sigma points.
+  Xaugpredict = [Xpredict;Xw];
+%========================================================
+% measurement approximation
+%========================================================
+   for j=1:2*m+1,
+     y(:,j) = H*Xaugres(:,j) + Vnoisesigma(:,j);
+ end
+  Y = y*Wm;
+% for j =1:2*m+1,
+ % Ppred =Wc(j)* [Xaugres(:,j) - Xaugpredict]*[Xaugres(:,j) - Xaugpredict]';    % ????? not very sure about this.
+ %end
+  
+  
+%========================================================
+%measurement noise covariance
+%=======================================================
+Ppred = zeros(14,14);
+Py = zeros(6,6);
+Pxy = zeros(14,6);
+for j = 1:2*m+1,
+ Ppred =Ppred + Wc(j)* [Xaugres(:,j) - Xaugpredict]*[Xaugres(:,j) - Xaugpredict]';   
+ Py = Py + Wc(j)*[y(:,j)-Y]*[y(:,j)-Y]';
+ Pxy = Pxy + Wc(j)*[Xaugres(:,j) - Xaugpredict]*[y(:,j)-Y]'; 
+ end
+
+ %if det(Py)==0;
+  %   return
+ %else
+ %end
+ 
+%if  cond(Py) < 1/((max(size(Py))*eps)),
+ %   I = pinv(Py);
+%else 
+%    return
+%end
+  %Py=py + diag(rand(6,1));
+  
+%========================================================
+% Kalman gain
+%========================================================
+
+  K = Pxy * inv(Py);
+  
+ 
+%========================================================
+%Updated covariance
+%========================================================
+%mat=zeros(6,53);
+
+   c = [[y(:,1)-Y],[y(:,2)-Y],[y(:,3)-Y],[y(:,4)-Y],[y(:,5)-Y],[y(:,6)-Y],[y(:,7)-Y],[y(:,8)-Y],[y(:,9)-Y],[y(:,10)-Y],[y(:,11)-Y],[y(:,12)-Y],[y(:,13)-Y],[y(:,14)-Y],[y(:,15)-Y],[y(:,16)-Y],[y(:,17)-Y],[y(:,18)-Y],[y(:,19)-Y],[y(:,20)-Y],[y(:,21)-Y],[y(:,22)-Y],[y(:,23)-Y],[y(:,24)-Y],[y(:,25)-Y],[y(:,26)-Y], [y(:,27)-Y],[y(:,28)-Y],[y(:,29)-Y],[y(:,30)-Y],[y(:,31)-Y],[y(:,32)-Y],[y(:,33)-Y],[y(:,34)-Y],[y(:,35)-Y],[y(:,36)-Y],[y(:,37)-Y],[y(:,38)-Y],[y(:,39)-Y], [y(:,40)-Y],[y(:,41)-Y],[y(:,42)-Y],[y(:,43)-Y],[y(:,44)-Y],[y(:,45)-Y],[y(:,46)-Y],[y(:,47)-Y],[y(:,48)-Y],[y(:,49)-Y],[y(:,50)-Y],[y(:,51)-Y],[y(:,52)-Y],[y(:,53)-Y]];
+  
+   %c(:,j) = col
+   % mat = [c,col];
+
+%Xprime = Xaugres + K*c;
+%res = [res,Xprime];
+% Xmeanupdated = Xprime*Wm;
+Pupdated = zeros(14,14);
+%for j=1:2*m+1,
+  
+%Pupdated =Pupdated + Wc(j)*[Xprime(:,j)-Xmeanupdated]*[Xprime(:,j)-Xmeanupdated]';
+%end
+%end
+
+Pupdated = Ppred - K*Py*K';
+
+
+
+%========================================================
+%Updated mean
+%========================================================
+
+  
+  Xmeanupdated = Xaugpredict + K*(ymeasured - Y);
+  
+  xmeannew = Xmeanupdated(1:8);    % updated mean of the state
+  xwmeannew = Xmeanupdated(9:14);  % updated mean of the states for the disturbance dynamics
+  
+  xcovnew = Pupdated(1:8,1:8);
+  xwcovnew = Pupdated(9:14,9:14);
+  
+  
+  
